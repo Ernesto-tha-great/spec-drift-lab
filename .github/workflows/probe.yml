@@ -1,0 +1,33 @@
+name: probe
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  models: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: GitHub Models catalog
+        run: |
+          curl -sS https://models.github.ai/catalog/models -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+            | jq -r '.[] | "\(.id)\t\(.rate_limit_tier)\t\(.capabilities|join(","))"' | head -80
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: GitHub Models smoke test
+        run: |
+          curl -sS https://models.github.ai/inference/chat/completions -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" \
+            -d '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Reply with the single word: pong"}]}' | jq -c '{model, choices: [.choices[0].message.content], usage, error}'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tessl CLI
+        run: |
+          npx -y @tessl/cli --help || true
+          npx -y @tessl/cli install --help || true
+          npx -y @tessl/cli search spec-driven 2>&1 | head -40 || true
+      - name: Spec Kit templates
+        run: |
+          curl -sSL https://api.github.com/repos/github/spec-kit/contents/templates | jq -r '.[].path' | head -40
+          curl -sSL https://api.github.com/repos/tesslio/spec-driven-development-tile/contents | jq -r '.[].path' | head -40 || true
