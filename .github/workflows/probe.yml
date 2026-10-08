@@ -21,13 +21,18 @@ jobs:
       - name: GitHub Models smoke test
         continue-on-error: true
         run: |
-          for m in openai/gpt-4.1-mini openai/gpt-4.1 openai/gpt-5-mini; do
-            echo "== $m"
-            curl -sS -w '\nHTTP %{http_code}\n' https://models.github.ai/inference/chat/completions -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" \
-              -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: pong\"}]}" | head -c 700; echo
-          done
+          echo "== models.github.ai"
+          curl -sS -D - https://models.github.ai/inference/chat/completions -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -H "Accept: application/json" \
+            -d '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Reply with the single word: pong"}]}' | head -c 1500; echo
+          echo "== models.inference.ai.azure.com"
+          curl -sS -D - https://models.inference.ai.azure.com/chat/completions -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" \
+            -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Reply with the single word: pong"}]}' | head -c 1500; echo
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tessl tile without login
+        continue-on-error: true
+        run: |
+          find . -maxdepth 4 -type f | head -40
       - name: Tessl CLI
         continue-on-error: true
         run: |
