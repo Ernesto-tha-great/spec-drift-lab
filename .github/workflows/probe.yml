@@ -10,26 +10,15 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Which Claude models can the key use? (free endpoint)
-        continue-on-error: true
-        run: |
-          curl -sS https://api.anthropic.com/v1/models?limit=50 -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print([m['id'] for m in d.get('data',[])] or d)"
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      - name: Spec Kit templates
-        continue-on-error: true
-        run: |
-          curl -sS https://api.github.com/repos/github/spec-kit/releases/latest | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tag_name'), d.get('published_at'))"
-          curl -sS https://api.github.com/repos/github/spec-kit/contents/templates | python3 -c "import json,sys; print([f['name'] for f in json.load(sys.stdin)])"
-          echo "===== spec-template.md"
-          curl -sS https://raw.githubusercontent.com/github/spec-kit/main/templates/spec-template.md | head -c 6000
-          echo; echo "===== README head"
-          curl -sS https://raw.githubusercontent.com/github/spec-kit/main/README.md | head -c 5000
       - name: Tessl CLI and docs
         continue-on-error: true
         run: |
-          npm view @tessl/cli name version description bin 2>&1 | head -20
-          echo "===== help"; timeout 60 npx -y @tessl/cli --help 2>&1 | head -60
-          echo "===== search"; timeout 60 npx -y @tessl/cli search webhooks 2>&1 | head -30
-          echo "===== llms.txt"; curl -sSL https://docs.tessl.io/llms.txt | head -c 8000
+          for q in "standard webhooks" "standardwebhooks" "webhook signature verification" "spec driven development"; do
+            echo "===== search: $q"; timeout 60 npx -y @tessl/cli search "$q" 2>&1 | head -40
+          done
+          echo "===== install help"; timeout 60 npx -y @tessl/cli install --help 2>&1 | head -40
+          mkdir -p /tmp/t && cd /tmp/t && echo '{}' > package.json
+          echo "===== install"; timeout 120 npx -y @tessl/cli install github:hookdeck/webhook-skills 2>&1 | tail -30
+          echo "===== files"; find /tmp/t -type f -not -path '*/node_modules/*' | head -80
+          echo "===== hookdeck repo skills"; curl -sS https://api.github.com/repos/hookdeck/webhook-skills/contents/skills | python3 -c "import json,sys; print([f['name'] for f in json.load(sys.stdin)])"
+          echo "===== core concepts"; curl -sSL https://docs.tessl.io/introduction-to-tessl/core-concepts.md | head -c 6000
