@@ -48,18 +48,30 @@ jobs:
               return found;
             } catch (e) { show(`links on ${url}`, `FAILED: ${e.message}`); return []; }
           }
-          await read('https://dzone.com/articles/caching-rate-limiting-redis-nextjs');
-          await read('https://hackernoon.com/rollups-are-the-futurebut-their-biggest-bottleneck-might-be-a-single-point-of-failure');
-          const hn = await links('https://hackernoon.com/u/ernestnnamdi', '^https://hackernoon\\.com/[a-z0-9-]{20,}$');
-          for (const url of hn.filter((u) => !u.includes('rollups-are-the-future')).slice(0, 3)) await read(url);
-          const hashnode = await links('https://hashnode.com/@Ernest-Nnamdi', 'hashnode\\.dev/|bulaveur');
-          const posts = hashnode.filter((u) => /hashnode\.dev\/[a-z0-9-]{8,}/.test(u)).slice(0, 4);
-          for (const url of posts) await read(url);
-          await links('https://dev.to/search?q=Ernest%20Nnamdi', '^https://dev\\.to/[^/]+/[a-z0-9-]{10,}$');
-          const feed = await fetch('https://craftoverflow.substack.com/feed', { signal: AbortSignal.timeout(20000) }).then((r) => r.text()).catch((e) => `FAILED: ${e.message}`);
-          const items = [...feed.matchAll(/<item>[\s\S]*?<title><!\[CDATA\[(.*?)\]\]><\/title>[\s\S]*?<link>(.*?)<\/link>/g)].map((m) => ({ title: m[1], link: m[2] }));
-          show('craftoverflow feed', items.map((i) => `${i.title} | ${i.link}`).join('\n') || feed.slice(0, 500));
-          for (const { link } of items.slice(0, 7)) await read(link, 'div.available-content, article');
+          // HackerNoon renders from page data; read the whole body.
+          for (const url of [
+            'https://hackernoon.com/how-to-build-a-decentralized-betting-platform-with-solidity-and-reactjs',
+            'https://hackernoon.com/building-a-production-grade-testnet-faucet-with-typescript-redis-and-nextjs',
+            'https://hackernoon.com/rollups-are-the-futurebut-their-biggest-bottleneck-might-be-a-single-point-of-failure',
+          ]) await read(url, 'body');
+          // Hashnode: the public GraphQL API, not the Cloudflare-protected page.
+          try {
+            const res = await fetch('https://gql.hashnode.com', {
+              method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(20000),
+              body: JSON.stringify({ query: '{ publication(host: "ernestnamdi.hashnode.dev") { posts(first: 10) { edges { node { title url publishedAt content { markdown } } } } } }' }),
+            });
+            const json = await res.json();
+            for (const { node } of json?.data?.publication?.posts?.edges ?? []) show(`hashnode: ${node.title} (${node.publishedAt?.slice(0, 10)})`, node.content.markdown.slice(0, 30000));
+            if (!json?.data) show('hashnode', JSON.stringify(json).slice(0, 800));
+          } catch (e) { show('hashnode', `FAILED: ${e.message}`); }
+          // Craft Overflow via the Wayback Machine.
+          try {
+            const cdx = await fetch('https://web.archive.org/cdx/search/cdx?url=craftoverflow.substack.com/p/*&output=json&fl=original,timestamp&filter=statuscode:200&collapse=urlkey&limit=300', { signal: AbortSignal.timeout(30000) }).then((r) => r.json());
+            const rows = cdx.slice(1).filter(([u]) => !/\/comments|\?|#/.test(u));
+            show('craftoverflow captures', rows.map(([u, t]) => `${t} ${u}`).join('\n'));
+            const preferred = rows.filter(([u]) => /erc721|ethereum|solidity|javascript|react|graphql|node|web3|smart|git|api|rust|code|engineer/i.test(u));
+            for (const [u, t] of [...preferred, ...rows].filter((r, i, a) => a.indexOf(r) === i).slice(0, 6)) await read(`https://web.archive.org/web/${t}/${u}`, 'div.available-content, div.body, article');
+          } catch (e) { show('craftoverflow', `FAILED: ${e.message}`); }
           await browser.close();
           JS
           node read.mjs
