@@ -11,23 +11,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: GitHub Models catalog
+        continue-on-error: true
         run: |
-          curl -sS https://models.github.ai/catalog/models -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
-            | jq -r '.[] | "\(.id)\t\(.rate_limit_tier)\t\(.capabilities|join(","))"' | head -80
+          curl -sS -w '\nHTTP %{http_code}\n' https://models.github.ai/catalog/models -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" -o catalog.txt || true
+          head -c 600 catalog.txt; echo
+          (jq -r '.[] | "\(.id)\t\(.rate_limit_tier)"' catalog.txt 2>/dev/null | head -60) || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: GitHub Models smoke test
+        continue-on-error: true
         run: |
-          curl -sS https://models.github.ai/inference/chat/completions -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" \
-            -d '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Reply with the single word: pong"}]}' | jq -c '{model, choices: [.choices[0].message.content], usage, error}'
+          for m in openai/gpt-4.1-mini openai/gpt-4.1 openai/gpt-5-mini; do
+            echo "== $m"
+            curl -sS -w '\nHTTP %{http_code}\n' https://models.github.ai/inference/chat/completions -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" \
+              -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: pong\"}]}" | head -c 700; echo
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Tessl CLI
+        continue-on-error: true
         run: |
-          npx -y @tessl/cli --help || true
-          npx -y @tessl/cli install --help || true
-          npx -y @tessl/cli search spec-driven 2>&1 | head -40 || true
-      - name: Spec Kit templates
+          npx -y @tessl/cli --help 2>&1 | head -60 || true
+          npx -y @tessl/cli install --help 2>&1 | head -40 || true
+      - name: Spec Kit and Tessl tile repos
+        continue-on-error: true
         run: |
-          curl -sSL https://api.github.com/repos/github/spec-kit/contents/templates | jq -r '.[].path' | head -40
-          curl -sSL https://api.github.com/repos/tesslio/spec-driven-development-tile/contents | jq -r '.[].path' | head -40 || true
+          curl -sSL https://api.github.com/repos/github/spec-kit/contents/templates | jq -r '.[].path' | head -40 || true
+          curl -sSL https://api.github.com/repos/tesslio/spec-driven-development-tile/contents | jq -r '.[].path' 2>/dev/null | head -40 || true
