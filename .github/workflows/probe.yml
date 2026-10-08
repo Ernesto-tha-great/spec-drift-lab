@@ -1,7 +1,5 @@
 name: probe
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,36 +8,29 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: GitHub Models catalog
+      - name: Who answers each LLM endpoint?
         continue-on-error: true
         run: |
-          curl -sS -w '\nHTTP %{http_code}\n' https://models.github.ai/catalog/models -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" -o catalog.txt || true
-          head -c 600 catalog.txt; echo
-          (jq -r '.[] | "\(.id)\t\(.rate_limit_tier)"' catalog.txt 2>/dev/null | head -60) || true
+          for url in \
+            https://models.github.ai/inference/chat/completions \
+            https://api.anthropic.com/v1/messages \
+            https://api.openai.com/v1/chat/completions \
+            https://generativelanguage.googleapis.com/v1beta/models \
+            https://example.com/ ; do
+            echo "== $url"
+            getent hosts "$(echo "$url" | cut -d/ -f3)" || echo "(no DNS)"
+            curl -sS -o body.txt -D headers.txt -w 'HTTP %{http_code} from %{remote_ip}\n' -X POST "$url" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -d '{}' || true
+            grep -iE '^(server|content-type|via|x-github-request-id|request-id|cf-ray):' headers.txt || true
+            head -c 300 body.txt; echo; echo
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: GitHub Models smoke test
-        continue-on-error: true
+      - name: Secrets present?
         run: |
-          echo "== models.github.ai"
-          curl -sS -D - https://models.github.ai/inference/chat/completions -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -H "Accept: application/json" \
-            -d '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Reply with the single word: pong"}]}' | head -c 1500; echo
-          echo "== models.inference.ai.azure.com"
-          curl -sS -D - https://models.inference.ai.azure.com/chat/completions -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" \
-            -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Reply with the single word: pong"}]}' | head -c 1500; echo
+          for name in ANTHROPIC_API_KEY OPENAI_API_KEY; do
+            if [ -n "${!name}" ]; then echo "$name is set"; else echo "$name is not set"; fi
+          done
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Tessl tile without login
-        continue-on-error: true
-        run: |
-          find . -maxdepth 4 -type f | head -40
-      - name: Tessl CLI
-        continue-on-error: true
-        run: |
-          npx -y @tessl/cli --help 2>&1 | head -60 || true
-          npx -y @tessl/cli install --help 2>&1 | head -40 || true
-      - name: Spec Kit and Tessl tile repos
-        continue-on-error: true
-        run: |
-          curl -sSL https://api.github.com/repos/github/spec-kit/contents/templates | jq -r '.[].path' | head -40 || true
-          curl -sSL https://api.github.com/repos/tesslio/spec-driven-development-tile/contents | jq -r '.[].path' 2>/dev/null | head -40 || true
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
