@@ -3,34 +3,33 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  models: read
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Who answers each LLM endpoint?
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Which Claude models can the key use? (free endpoint)
         continue-on-error: true
         run: |
-          for url in \
-            https://models.github.ai/inference/chat/completions \
-            https://api.anthropic.com/v1/messages \
-            https://api.openai.com/v1/chat/completions \
-            https://generativelanguage.googleapis.com/v1beta/models \
-            https://example.com/ ; do
-            echo "== $url"
-            getent hosts "$(echo "$url" | cut -d/ -f3)" || echo "(no DNS)"
-            curl -sS -o body.txt -D headers.txt -w 'HTTP %{http_code} from %{remote_ip}\n' -X POST "$url" \
-              -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -d '{}' || true
-            grep -iE '^(server|content-type|via|x-github-request-id|request-id|cf-ray):' headers.txt || true
-            head -c 300 body.txt; echo; echo
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Secrets present?
-        run: |
-          for name in ANTHROPIC_API_KEY OPENAI_API_KEY; do
-            if [ -n "${!name}" ]; then echo "$name is set"; else echo "$name is not set"; fi
-          done
+          curl -sS https://api.anthropic.com/v1/models?limit=50 -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print([m['id'] for m in d.get('data',[])] or d)"
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - name: Spec Kit templates
+        continue-on-error: true
+        run: |
+          curl -sS https://api.github.com/repos/github/spec-kit/releases/latest | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tag_name'), d.get('published_at'))"
+          curl -sS https://api.github.com/repos/github/spec-kit/contents/templates | python3 -c "import json,sys; print([f['name'] for f in json.load(sys.stdin)])"
+          echo "===== spec-template.md"
+          curl -sS https://raw.githubusercontent.com/github/spec-kit/main/templates/spec-template.md | head -c 6000
+          echo; echo "===== README head"
+          curl -sS https://raw.githubusercontent.com/github/spec-kit/main/README.md | head -c 5000
+      - name: Tessl CLI and docs
+        continue-on-error: true
+        run: |
+          npm view @tessl/cli name version description bin 2>&1 | head -20
+          echo "===== help"; timeout 60 npx -y @tessl/cli --help 2>&1 | head -60
+          echo "===== search"; timeout 60 npx -y @tessl/cli search webhooks 2>&1 | head -30
+          echo "===== llms.txt"; curl -sSL https://docs.tessl.io/llms.txt | head -c 8000
