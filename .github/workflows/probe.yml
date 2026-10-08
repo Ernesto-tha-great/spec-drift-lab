@@ -13,12 +13,12 @@ jobs:
       - name: Tessl CLI and docs
         continue-on-error: true
         run: |
-          for q in "standard webhooks" "standardwebhooks" "webhook signature verification" "spec driven development"; do
-            echo "===== search: $q"; timeout 60 npx -y @tessl/cli search "$q" 2>&1 | head -40
-          done
-          echo "===== install help"; timeout 60 npx -y @tessl/cli install --help 2>&1 | head -40
-          mkdir -p /tmp/t && cd /tmp/t && echo '{}' > package.json
-          echo "===== install"; timeout 120 npx -y @tessl/cli install github:hookdeck/webhook-skills 2>&1 | tail -30
-          echo "===== files"; find /tmp/t -type f -not -path '*/node_modules/*' | head -80
-          echo "===== hookdeck repo skills"; curl -sS https://api.github.com/repos/hookdeck/webhook-skills/contents/skills | python3 -c "import json,sys; print([f['name'] for f in json.load(sys.stdin)])"
-          echo "===== core concepts"; curl -sSL https://docs.tessl.io/introduction-to-tessl/core-concepts.md | head -c 6000
+          mkdir -p /tmp/a /tmp/b && echo '{}' > /tmp/a/package.json && echo '{}' > /tmp/b/package.json
+          echo "===== install tessl-labs/spec-driven-development"
+          (cd /tmp/a && timeout 180 npx -y @tessl/cli install tessl-labs/spec-driven-development --yes --agent claude-code 2>&1 | tail -25)
+          find /tmp/a -type f -not -path '*/node_modules/*' | head -60
+          for f in $(find /tmp/a -name '*.md' -not -path '*/node_modules/*' | head -12); do echo "----- $f ($(wc -c < $f) bytes)"; head -c 1500 "$f"; echo; done
+          echo "===== install svix-webhooks skill"
+          (cd /tmp/b && timeout 180 npx -y @tessl/cli install github:hookdeck/webhook-skills --skill svix-webhooks --yes --agent claude-code 2>&1 | tail -25)
+          find /tmp/b -type f -not -path '*/node_modules/*' | head -60
+          for f in $(find /tmp/b -name '*.md' -not -path '*/node_modules/*' | head -8); do echo "----- $f ($(wc -c < $f) bytes)"; head -c 4000 "$f"; echo; done
